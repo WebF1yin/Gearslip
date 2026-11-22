@@ -58,6 +58,7 @@ fun CarSettingsScreen() {
     val night by CarSettings.nightMode.collectAsState()
     val units by CarSettings.units.collectAsState()
     val navBar by CarSettings.navBarMode.collectAsState()
+    val mapClearance by CarSettings.mapClearance.collectAsState()
     val screenSize by CarSettings.screenSize.collectAsState()
     val screenFit by CarSettings.screenFit.collectAsState()
     val whatsNew by CarSettings.whatsNewAfterUpdates.collectAsState()
@@ -205,6 +206,10 @@ fun CarSettingsScreen() {
                         ) { CarSettings.setPlayerLeft(it) }
                     }
                     item { Note(stringResource(R.string.car_player_beside_map_note)) }
+                    item {
+                        ChoiceRow(stringResource(R.string.car_map_clearance), mapClearanceChoices(), mapClearance) { CarSettings.setMapClearance(it) }
+                    }
+                    item { Note(stringResource(R.string.car_map_clearance_note)) }
                     item {
                         SwitchRow(stringResource(R.string.car_autoplay), stringResource(R.string.car_autoplay_note), autoplay) { CarSettings.setAutoplay(it) }
                     }
@@ -581,4 +586,12 @@ private fun StepButton(text: String, modifier: Modifier, onClick: () -> Unit) {
 private val SCREEN_PRESETS = listOf(
     ScreenSize(800, 480), ScreenSize(1024, 600), ScreenSize(1280, 480), ScreenSize(1280, 720),
     ScreenSize(1440, 540), ScreenSize(1920, 720), ScreenSize(1920, 1080),
+)
+
+/** Auto, On, and Off for [MapClearance], as both settings screens show them. */
+@Composable
+fun mapClearanceChoices(): List<Pair<MapClearance, String>> = listOf(
+    MapClearance.AUTO to stringResource(R.string.choice_auto),
+    MapClearance.ON to stringResource(R.string.on),
+    MapClearance.OFF to stringResource(R.string.off),
 )

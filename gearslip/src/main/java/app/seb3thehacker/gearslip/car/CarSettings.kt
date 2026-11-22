@@ -47,6 +47,20 @@ enum class PreviewSize { LAST_CAR, FILL, CUSTOM }
 enum class NavBarMode { SHOW, HIDE_NAVIGATING, HIDE }
 
 /**
+ * Whether a map app's surface ends above the nav bar and beside the docked player, for a map app
+ * that puts its own buttons under them. Auto does it for an app known to ignore the visible area.
+ */
+enum class MapClearance {
+    AUTO, ON, OFF;
+
+    fun appliesTo(ignoresVisibleArea: Boolean) = when (this) {
+        AUTO -> ignoresVisibleArea
+        ON -> true
+        OFF -> false
+    }
+}
+
+/**
  * Settings changed from the car screen itself. Held as flows so the car UI reacts the moment a
  * button is tapped, and persisted through [AppSettings] so they survive the next connection.
  */
@@ -85,6 +99,7 @@ private const val KEY_CLUSTER_VIDEO = "cluster_video_enabled"
     private const val KEY_SEEN_SAFETY_WARNING = "car_seen_safety_warning"
     private const val KEY_UNITS = "car_units"
     private const val KEY_NAV_BAR = "car_nav_bar"
+    private const val KEY_MAP_CLEARANCE = "car_map_clearance"
     private const val KEY_SCREEN_SIZE = "car_screen_size"
     private const val KEY_SCREEN_FIT = "car_screen_fit"
     private const val KEY_PREVIEW_SIZE = "preview_size"
@@ -175,6 +190,14 @@ private const val KEY_CLUSTER_VIDEO = "cluster_video_enabled"
     fun setNavBarMode(mode: NavBarMode) {
         navBarFlow.value = mode
         AppSettings.putString(app, KEY_NAV_BAR, mode.name)
+    }
+
+    private val mapClearanceFlow = MutableStateFlow(MapClearance.AUTO)
+    val mapClearance: StateFlow<MapClearance> = mapClearanceFlow
+
+    fun setMapClearance(mode: MapClearance) {
+        mapClearanceFlow.value = mode
+        AppSettings.putString(app, KEY_MAP_CLEARANCE, mode.name)
     }
 
 
@@ -441,6 +464,9 @@ private const val KEY_CLUSTER_VIDEO = "cluster_video_enabled"
         navBarFlow.value = runCatching {
             NavBarMode.valueOf(AppSettings.getString(app, KEY_NAV_BAR, NavBarMode.SHOW.name))
         }.getOrDefault(NavBarMode.SHOW)
+        mapClearanceFlow.value = runCatching {
+            MapClearance.valueOf(AppSettings.getString(app, KEY_MAP_CLEARANCE, MapClearance.AUTO.name))
+        }.getOrDefault(MapClearance.AUTO)
         whatsNewFlow.value = AppSettings.getString(app, KEY_WHATS_NEW, "true") == "true"
         whatsNewSeenFlow.value = AppSettings.getString(app, KEY_WHATS_NEW_SEEN, "0").toIntOrNull() ?: 0
     }

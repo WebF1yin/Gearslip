@@ -6,6 +6,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Rect
 import android.location.Location
@@ -75,6 +76,13 @@ class CarAppConnection(private val context: Context, private val session: Sessio
         val template: String? = null,
         val surfaceRequested: Boolean = false,
         val surfaceAttached: Boolean = false,
+        /**
+         * The app lays its own map buttons out over the whole surface and ignores the visible
+         * area: one on a native car adapter (Google Maps patched by Morphe), unless its manifest
+         * says it honours the visible area (see [HONORS_VISIBLE_AREA]). Map clearance on Auto
+         * goes by this.
+         */
+        val ignoresVisibleArea: Boolean = false,
     )
 
     /** The Surface lent to the app, plus the size the app should draw at. */
@@ -307,7 +315,13 @@ class CarAppConnection(private val context: Context, private val session: Sessio
             return
         }
         val app = carApp ?: return
-        update { it.copy(apiLevel = negotiated, detail = "handshake") }
+        val nativeAdapter = info.libraryDisplayVersion.contains("native car adapter", ignoreCase = true)
+        val honors = honorsVisibleArea(component)
+        if (nativeAdapter) {
+            GearslipLog.i("host: $appPackage is on a native car adapter" + if (honors) ", and says it honours the visible area" else "")
+        }
+        val ignoresVisibleArea = nativeAdapter && !honors
+        update { it.copy(apiLevel = negotiated, detail = "handshake", ignoresVisibleArea = ignoresVisibleArea) }
 
         val handshake = runCatching { Bundleable.create(HandshakeInfo(context.packageName, negotiated)) }
             .getOrElse { return fail(Phase.FAILED, "could not bundle the handshake: ${it.message}") }
@@ -869,7 +883,26 @@ class CarAppConnection(private val context: Context, private val session: Sessio
         _status.value = block(_status.value)
     }
 
+    /**
+     * Whether the app's car service, or the app itself, sets [HONORS_VISIBLE_AREA] to true in its
+     * manifest. Read at each connection, so an update to the app that adds it takes effect then.
+     */
+    private fun honorsVisibleArea(component: ComponentName?): Boolean {
+        component ?: return false
+        val pm = context.packageManager
+        val service = runCatching { pm.getServiceInfo(component, PackageManager.GET_META_DATA).metaData }.getOrNull()
+        val app = runCatching { pm.getApplicationInfo(component.packageName, PackageManager.GET_META_DATA).metaData }.getOrNull()
+        return service?.getBoolean(HONORS_VISIBLE_AREA) == true || app?.getBoolean(HONORS_VISIBLE_AREA) == true
+    }
+
     private companion object {
+        /**
+         * Manifest meta-data, on the car app service or the application: true says the app lays
+         * out its own buttons inside the visible area Gearslip reports, so Map clearance on Auto
+         * leaves its surface whole. For apps on a native car adapter, which didn't.
+         */
+        const val HONORS_VISIBLE_AREA = "app.seb3thehacker.gearslip.HONORS_VISIBLE_AREA"
+
         /** The newest template API this host claims to understand. */
         const val HOST_API_LEVEL = CarAppApiLevels.LEVEL_8
 
