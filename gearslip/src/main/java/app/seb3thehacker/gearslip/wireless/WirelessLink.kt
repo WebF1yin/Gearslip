@@ -560,7 +560,7 @@ object WirelessLink {
         // Set once Android refuses to bind to the car's network, which a VPN causes. Plain sockets
         // then go through the VPN, and VPNs that let local traffic past still reach the car.
         var bindRefused = false
-        repeat(TCP_TRIES) { attempt ->
+        for (attempt in 0 until TCP_TRIES) {
             if (run != tcpRun) {
                 log.i("TCP: stopping the tries on the old network - the car started over")
                 return
@@ -599,6 +599,10 @@ object WirelessLink {
                     log.i("TCP: Android won't let Gearslip use the car's network directly; trying the phone's ordinary route")
                 }
                 if (attempt == 0) probe(context, net, ip, port)
+                // Refused the car's network, and the VPN's route failed too: more tries won't
+                // change that. A Pixel with Windscribe on spent nine of them, and the car started
+                // over before Gearslip ever said why.
+                if (bindRefused && attempt > 0 && vpnActive(context)) break
                 Thread.sleep(1_000)
             }
         }
