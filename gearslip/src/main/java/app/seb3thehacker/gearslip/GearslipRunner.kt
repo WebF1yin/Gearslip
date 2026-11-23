@@ -308,7 +308,7 @@ class GearslipRunner(
             MSG_AUTH_COMPLETE -> onAuthComplete(body)
             MSG_SERVICE_DISCOVERY_RESPONSE -> onServiceDiscoveryResponse(body)
             MSG_PING_REQUEST -> onPingRequest(body)
-            MSG_PING_RESPONSE -> onPingResponse()
+            MSG_PING_RESPONSE -> onPingResponse(body)
             MSG_BYEBYE_REQUEST -> onByeByeRequest(body)
             MSG_UNEXPECTED_MESSAGE, MSG_FRAMING_ERROR -> onProtocolError(messageId)
             AudioLink.MSG_FOCUS_RESPONSE -> {
@@ -1481,11 +1481,30 @@ class GearslipRunner(
 
     @Volatile private var pingsSent = 0
     private var pingsAnswered = 0
+    /** Round trips of the pings answered since the last report: how many, their total, the longest. */
+    private var pingsTimed = 0
+    private var pingTotalMs = 0L
+    private var pingLongestMs = 0L
 
-    private fun onPingResponse() {
+    private fun onPingResponse(body: ByteArray) {
         pingsAnswered++
+        // The car sends back the time the ping left. The round trip covers the Wi-Fi or cable,
+        // whatever was queued to the car ahead of the ping, and the car's own answer: next to the
+        // video's acks, it tells a slow link from a slow decoder.
+        Wire.varint(Wire.fields(body), 1)?.let { sentUs ->
+            val ms = (System.nanoTime() / 1_000 - sentUs) / 1_000
+            if (ms in 0..PING_TRIP_SANE_MS) {
+                pingsTimed++
+                pingTotalMs += ms
+                pingLongestMs = maxOf(pingLongestMs, ms)
+            }
+        }
         if (pingsAnswered == 1 || pingsAnswered % PING_LOG_EVERY == 0) {
-            log.i("<- PingResponse ($pingsAnswered of $pingsSent answered)")
+            val trip = if (pingsTimed > 0) ", round trip ${pingTotalMs / pingsTimed}ms average, ${pingLongestMs}ms longest" else ""
+            log.i("<- PingResponse ($pingsAnswered of $pingsSent answered$trip)")
+            pingsTimed = 0
+            pingTotalMs = 0L
+            pingLongestMs = 0L
         }
     }
 
@@ -1707,6 +1726,8 @@ class GearslipRunner(
         const val MSG_PING_RESPONSE = 12
         private const val PHONE_PING_MS = 1_000L
         private const val PING_LOG_EVERY = 60
+        /** Longer than this, the echoed time isn't the one Gearslip sent. */
+        private const val PING_TRIP_SANE_MS = 60_000L
         const val MSG_BYEBYE_REQUEST = 15
         const val MSG_BYEBYE_RESPONSE = 16
         const val MSG_VOICE_SESSION_NOTIFICATION = 17
