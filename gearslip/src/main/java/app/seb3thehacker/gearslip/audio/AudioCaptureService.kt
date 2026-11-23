@@ -35,7 +35,7 @@ class AudioCaptureService : Service() {
     @Volatile private var reading = false
     private var projection: MediaProjection? = null
     private var thread: Thread? = null
-    private var mutedPhone = false
+    @Volatile private var mutedPhone = false
 
     /**
      * Silence the phone's own speaker while the car is being fed.
@@ -52,6 +52,18 @@ class AudioCaptureService : Service() {
             mutedPhone = true
             GearslipLog.i("audio: muted the phone's speaker for the drive")
         }.onFailure { GearslipLog.w("audio: could not mute the phone: ${it.message}") }
+    }
+
+    /**
+     * A volume key on the phone unmutes its speaker, and the music then played from the phone and
+     * the car at once. Muted again whenever that happens: the car's volume is the car's own.
+     */
+    private fun keepPhoneMuted() {
+        val audio = getSystemService(android.media.AudioManager::class.java)
+        if (runCatching { audio.isStreamMute(android.media.AudioManager.STREAM_MUSIC) }.getOrDefault(true)) return
+        mutedPhone = false
+        GearslipLog.i("audio: the phone's speaker came back on, as a volume key does - muting it again")
+        mutePhone()
     }
 
     private fun unmutePhone() {
@@ -159,6 +171,7 @@ class AudioCaptureService : Service() {
             var warnedSilent = false
             var lastSound = startedAt
             var silenceReported = false
+            var muteCheckedAt = startedAt
             try {
                 record.startRecording()
                 GearslipLog.i("audio: capturing media playback at ${rate}Hz x$channels")
@@ -176,6 +189,12 @@ class AudioCaptureService : Service() {
                     }
                     if (peak > 0) everHeard = true
                     val now = System.currentTimeMillis()
+                    // Not once the service is closing: a re-mute after its unmute would leave the
+                    // phone silent after the drive.
+                    if (reading && mutedPhone && now - muteCheckedAt >= MUTE_CHECK_MS) {
+                        muteCheckedAt = now
+                        keepPhoneMuted()
+                    }
                     // A stretch of silence: CarAudio says why on the car if a blocking app is playing.
                     if (peak > 0) {
                         lastSound = now
@@ -258,6 +277,8 @@ class AudioCaptureService : Service() {
         private const val BUFFER_CHUNKS = 24
         private const val LEVEL_LOG_MS = 3_000L
         private const val SILENCE_MS = 5_000L
+        /** How often the phone's speaker is checked for having come back on. */
+        private const val MUTE_CHECK_MS = 250L
 
         private var appContext: Context? = null
 
