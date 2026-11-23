@@ -72,6 +72,8 @@ object WirelessLink {
 
     private const val LISTEN_MS = 120_000 // time to reconnect the phone from the car's Bluetooth menu
     private const val TCP_TRIES = 12 // about a minute: a car's projection listener can start well after its Wi-Fi
+    /** DSCP CS4 (real-time interactive) in the IP header's traffic class byte: Wi-Fi's video queue. */
+    private const val TRAFFIC_CLASS_REAL_TIME = 0x80
     private const val WIFI_WAIT_MS = 60_000
     private const val KNOCK_MS = 8_000L // some cars publish their service only a while after Bluetooth connects
     private const val START_RETRIES = 3
@@ -579,6 +581,15 @@ object WirelessLink {
                     else -> net.socketFactory.createSocket()
                 }
                 socket.tcpNoDelay = true
+                // Marked as real-time interactive traffic (DSCP CS4), which the phone's Wi-Fi sends
+                // from its video queue (WMM AC_VI) instead of the best-effort one. 802.11's default
+                // parameters give that queue a shorter wait before it sends, and cap its backoff
+                // after a collision at 15 slots against up to 1023 for best effort. A SOOEMAKA's
+                // Wi-Fi is on 2.4 GHz, where pings to it took up to 500 ms while Gearslip streamed.
+                // Only what the phone sends is marked; the car's acks and touches go out however
+                // the car sends them.
+                runCatching { socket.trafficClass = TRAFFIC_CLASS_REAL_TIME }
+                    .onFailure { log.w("TCP: could not mark the link as real-time: ${it.message}") }
                 socket.connect(InetSocketAddress(ip, port), 5_000)
                 tcp = socket
                 handedOver = true
